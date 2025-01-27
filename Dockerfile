@@ -1,21 +1,8 @@
-# Use an official Python runtime as a parent image
-FROM python:3.9-slim
+# Use the official PHP base image
+FROM php:8.1-apache
 
-# Set the working directory
-WORKDIR /app
+# Copy application code into the container
+COPY index.php /var/www/html/
 
-# Install necessary dependencies
-
-# Install the necessary Python dependencies
-#COPY requirements.txt .
-#RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the current directory contents into the container
-COPY . .
-
-# Set the environment variables
-ENV APP_NAME=my-app
-ENV IMAGE_TAG=latest
-
-# Run the app (or replace with your app's startup command)
-#CMD ["python", "app.py"]
+# Expose the default web server port
+EXPOSE 80
