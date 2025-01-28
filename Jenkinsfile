@@ -1,5 +1,11 @@
 pipeline {
     agent any
+    triggers {
+        githubPush() // This listens for webhook triggers
+    }
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+    }
 
     environment {
         DOCKER_REGISTRY = 'localhost:5000' // Minikube Docker Registry
