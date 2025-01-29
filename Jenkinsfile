@@ -4,7 +4,11 @@ pipeline {
         stage('Set Environment Variables') {
             steps {
                 script {
-                    withEnv(['MYAPP_URL=localhost:5000', 'MYAPP_TAG=latest']) {
+                     withEnv([
+                         'MYAPP_URL=localhost:5000',
+                         'MYAPP_TAG=latest',
+                         'PATH=/opt/homebrew/bin:$PATH'
+    ]) {
                         //sh 'minikube start'
                     }
                 }
