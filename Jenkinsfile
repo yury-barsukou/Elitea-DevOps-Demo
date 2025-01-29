@@ -2,7 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HOST = 'tcp://localhost:2375'
+        DOCKER_REGISTRY = 'localhost:5000'
+DOCKER_IMAGE = 'myapp'
+DOCKER_TAG = 'latest'
     }
 
     stages {
@@ -15,8 +17,8 @@ pipeline {
         stage('Build Image') {
             steps {
                 sh 'eval $(minikube docker-env)'
-                sh 'docker build -t localhost:5000/myapp:latest .'
-                sh 'docker push localhost:5000/myapp:latest'
+                sh 'docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} .'
+                sh 'docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
             }
         }
 
