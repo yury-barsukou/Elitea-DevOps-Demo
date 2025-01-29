@@ -2,7 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HOST = 'tcp://localhost:2375'
+        DOCKER_REGISTRY = 'localhost:5000'
+DOCKER_IMAGE = 'myapp'
+DOCKER_TAG = 'latest'
     }
 
     stages {
