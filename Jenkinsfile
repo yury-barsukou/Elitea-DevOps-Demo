@@ -1,40 +1,33 @@
 pipeline {
     agent any
+
+    environment {
+        DOCKER_HOST = 'tcp://localhost:2375'
+    }
+
     stages {
-        stage('Set Environment Variables') {
+        stage('Checkout') {
             steps {
-                script {
-                    env.LOCAL_HOST = 'localhost:5000'
-                    env.APP_NAME = 'myapp'
-                    env.IMAGE_TAG = 'latest'
-                }
+                git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
             }
         }
-        stage('Checkout Source Code') {
-            steps {
-                script {
-                    git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
-                }
-            }
-        }
-        stage('Set Minikube Docker Environment') {
+
+        stage('Build Image') {
             steps {
                 sh 'eval $(minikube docker-env)'
-            }
-        }
-        stage('Build Docker Image') {
-            steps {
                 sh 'docker build -t localhost:5000/myapp:latest .'
-            }
-        }
-        stage('Push Docker Image') {
-            steps {
                 sh 'docker push localhost:5000/myapp:latest'
             }
         }
-        stage('Run Kubernetes Deployment') {
+
+        stage('Deploy to Kubernetes') {
             steps {
                 sh 'kubectl apply -f deployment.yaml'
+            }
+            post {
+                failure {
+                    sh 'kubectl rollout undo deployment myapp'
+                }
             }
         }
     }
