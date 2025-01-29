@@ -18,7 +18,7 @@ DOCKER_TAG = 'latest'
             steps {
                 sh 'eval $(minikube docker-env)'
                 sh 'docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} .'
-                sh 'docker push localhost:5000/myapp:latest'
+                sh 'docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
             }
         }
 
