@@ -7,6 +7,7 @@ pipeline {
                     env.LOCALHOST = 'localhost:5000'
                     env.APP_NAME = 'myapp'
                     env.APP_TAG = 'latest'
+                    env.MINIKUBE_EXISTING_DOCKER_HOST = 'unix:///var/run/docker.sock'
                 }
             }
         }
