@@ -8,6 +8,7 @@ pipeline {
                     env.APP_NAME = 'myapp'
                     env.APP_TAG = 'latest'
                     env.MINIKUBE_EXISTING_DOCKER_HOST = 'unix:///var/run/docker.sock'
+                    env. DOCKER_HOST = 'tcp://127.0.0.1:54509'
                 }
             }
         }
