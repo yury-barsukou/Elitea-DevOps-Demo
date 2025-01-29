@@ -4,9 +4,9 @@ pipeline {
         stage('Set Environment Variables') {
             steps {
                 script {
-                    env.LOCALHOST = 'localhost:5000'
+                    env.LOCAL_HOST = 'localhost:5000'
                     env.APP_NAME = 'myapp'
-                    env.APP_TAG = 'latest'
+                    env.IMAGE_TAG = 'latest'
                 }
             }
         }
@@ -17,29 +17,24 @@ pipeline {
                 }
             }
         }
-        stage('Set Minikube Docker Env') {
+        stage('Set Minikube Docker Environment') {
             steps {
-                script {
-                    sh 'eval \
-                        $(minikube -p minikube docker-env)'
-                    env.DOCKER_ENV = sh(script: 'minikube -p minikube docker-env', returnStdout: true)
-                }
+                sh 'eval $(minikube docker-env)'
             }
         }
         stage('Build Docker Image') {
             steps {
-                script {
-                    sh 'eval $(minikube -p minikube docker-env)'
-
-                    sh 'docker build -t localhost:5000/myapp:latest .'
-                }
+                sh 'docker build -t localhost:5000/myapp:latest .'
+            }
+        }
+        stage('Push Docker Image') {
+            steps {
+                sh 'docker push localhost:5000/myapp:latest'
             }
         }
         stage('Run Kubernetes Deployment') {
             steps {
-                script {
-                    sh 'kubectl apply -f deployment.yaml'
-                }
+                sh 'kubectl apply -f deployment.yaml'
             }
         }
     }
