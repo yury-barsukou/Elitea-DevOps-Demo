@@ -5,7 +5,7 @@ pipeline {
             steps {
                 script {
                     withEnv(['MYAPP_URL=localhost:5000', 'MYAPP_TAG=latest']) {
-                        sh 'minikube start'
+                        //sh 'minikube start'
                     }
                 }
             }
