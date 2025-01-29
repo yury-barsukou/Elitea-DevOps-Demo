@@ -10,6 +10,7 @@ pipeline {
                     env.MINIKUBE_EXISTING_DOCKER_HOST = 'unix:///var/run/docker.sock'
                     env.DOCKER_HOST = 'tcp://127.0.0.1:54509'
                     env.DOCKER_TLS_VERIFY = '1'
+                    env.DOCKER_CERT_PATH = '/Users/sathish_ravi/.minikube/certs'
                 }
             }
         }
