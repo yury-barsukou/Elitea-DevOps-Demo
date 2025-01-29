@@ -1,39 +1,51 @@
 pipeline {
     agent any
+
+    environment {
+        DOCKER_REGISTRY = 'localhost:5000' // Minikube Docker Registry
+        APP_NAME = 'myapp'
+        IMAGE_TAG = 'latest'
+        PATH = "/opt/homebrew/bin:$PATH"
+        DOCKER_TLS_VERIFY = '1'
+        DOCKER_HOST = 'tcp://127.0.0.1:54509'
+        DOCKER_CERT_PATH = '/Users/sathish_ravi/.minikube/certs'
+        MINIKUBE_EXISTING_DOCKER_HOST = 'unix:///var/run/docker.sock'
+        MINIKUBE_ACTIVE_DOCKERD = 'minikube'
+        
+    }
+
     stages {
-        stage('Set Environment Variables') {
-            steps {
-                script {
-                     withEnv([
-                         'MYAPP_URL=localhost:5000',
-                         'MYAPP_TAG=latest',
-                         'PATH=/opt/homebrew/bin:$PATH'
-    ]) {
-                        //sh 'minikube start'
-                    }
-                }
-            }
-        }
         stage('Checkout Source Code') {
-            steps {
-                script {
-                    git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
-                }
+            
+                steps {
+                git branch: 'main', 
+                    credentialsId: 'github-pat-id', 
+                    url: 'https://github.com/sathishravigithub/LLM.git'
+            
             }
         }
+
         stage('Set Minikube Environment') {
             steps {
-                sh 'eval $(minikube docker-env)'
+                script {
+                    sh 'eval $(minikube docker-env)'
+                }
             }
         }
+
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t localhost:5000/myapp:latest .'
+                script {
+                    sh 'docker build -t localhost:5000/myapp:latest .'
+                }
             }
         }
+
         stage('Run Kubernetes Deployment') {
             steps {
-                sh 'kubectl apply -f deployment.yaml'
+                script {
+                    sh 'kubectl apply -f deployment.yaml'
+                }
             }
         }
     }
