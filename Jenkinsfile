@@ -29,6 +29,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
+                    sh 'eval $(minikube -p minikube docker-env)'
+
                     sh 'docker build -t localhost:5000/myapp:latest .'
                 }
             }
