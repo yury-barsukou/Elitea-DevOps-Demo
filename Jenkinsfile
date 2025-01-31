@@ -8,6 +8,14 @@ pipeline {
     }
 
     stages {
+        stage('Build') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo 'Running pipeline for the main branch'
+            }
+        }
         stage('Checkout') {
             steps {
                 git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
