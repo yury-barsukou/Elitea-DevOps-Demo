@@ -1,11 +1,13 @@
+Jenkinsfile
+
+
 pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = 'your-docker-registry'
-        IMAGE_NAME = 'your-image-name'
-        IMAGE_TAG = 'latest'
-        KUBERNETES_NAMESPACE = 'your-namespace'
+        DOCKER_REGISTRY = 'localhost:5000'
+        DOCKER_IMAGE = 'myapp'
+        DOCKER_TAG = 'latest'
     }
 
     stages {
@@ -17,28 +19,17 @@ pipeline {
                 echo 'Running pipeline for the main branch'
             }
         }
-        
         stage('Checkout') {
             steps {
-                checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: 'https://github.com/your-repo/build-code.git']]])
+                git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
             }
         }
 
-        stage('Set up Minikube Docker Env') {
+        stage('Build Image') {
             steps {
                 sh 'eval $(minikube docker-env)'
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} .'
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                sh 'docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}'
+                sh 'docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} .'
+                sh 'docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
             }
         }
 
@@ -46,26 +37,15 @@ pipeline {
             steps {
                 sh 'kubectl apply -f deployment.yaml'
             }
-        }
-
-        stage('Verify Deployment') {
-            steps {
-                script {
-                    def podsReady = sh(script: "kubectl rollout status deployment/${env.IMAGE_NAME} -n ${env.KUBERNETES_NAMESPACE} --timeout=120s", returnStatus: true)
-                    if (podsReady != 0) {
-                        error('Deployment failed, rolling back...')
-                    }
+            post {
+                failure {
+                    sh 'kubectl rollout undo deployment myapp'
                 }
             }
         }
     }
-
+    
     post {
-        failure {
-            script {
-                sh "kubectl rollout undo deployment/${env.IMAGE_NAME} -n ${env.KUBERNETES_NAMESPACE}"
-            }
-        }
         always {
             cleanWs()
         }
