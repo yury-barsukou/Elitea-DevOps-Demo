@@ -3,8 +3,8 @@ pipeline {
 
     environment {
         DOCKER_REGISTRY = 'localhost:5000'
-DOCKER_IMAGE = 'myapp'
-DOCKER_TAG = 'latest'
+        DOCKER_IMAGE = 'myapp'
+        DOCKER_TAG = 'latest'
     }
 
     stages {
@@ -31,6 +31,12 @@ DOCKER_TAG = 'latest'
                     sh 'kubectl rollout undo deployment myapp'
                 }
             }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
         }
     }
 }
