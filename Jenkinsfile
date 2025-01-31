@@ -4,6 +4,7 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'your-docker-registry'
         IMAGE_NAME = 'your-image-name'
+        IMAGE_TAG = 'latest'
         KUBERNETES_NAMESPACE = 'your-namespace'
     }
 
@@ -19,33 +20,31 @@ pipeline {
         
         stage('Checkout') {
             steps {
-                checkout scm
+                checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: 'https://github.com/your-repo/build-code.git']]])
+            }
+        }
+
+        stage('Set up Minikube Docker Env') {
+            steps {
+                sh 'eval $(minikube docker-env)'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    dockerImage = docker.build("${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}")
-                }
+                sh 'docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} .'
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                script {
-                    docker.withRegistry("https://${env.DOCKER_REGISTRY}") {
-                        dockerImage.push()
-                    }
-                }
+                sh 'docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}'
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                script {
-                    kubernetesDeploy(configs: 'deployment.yaml', kubeconfigId: 'kubeconfig')
-                }
+                sh 'kubectl apply -f deployment.yaml'
             }
         }
 
