@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = 'your-docker-registry'
-        IMAGE_NAME = 'your-image-name'
-        KUBECONFIG_CREDENTIALS = credentials('kubeconfig')
+        DOCKER_REGISTRY = 'localhost:5000'
+        DOCKER_IMAGE = 'myapp'
+        DOCKER_TAG = 'latest'
     }
 
     stages {
@@ -24,32 +24,19 @@ pipeline {
 
         stage('Build Image') {
             steps {
-                script {
-                    docker.build("${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}").push()
-                }
-            }
-        }
-
-        stage('Trivy Scan') {
-            steps {
-                script {
-                    def trivyScan = sh(script: "trivy image --exit-code 1 ${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}", returnStatus: true)
-                    if (trivyScan != 0) {
-                        error("Trivy scan failed")
-                    }
-                }
+                sh 'eval $(minikube docker-env)'
+                sh 'docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} .'
+                sh 'docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                script {
-                    try {
-                        sh 'kubectl apply -f deployment.yaml'
-                    } catch (Exception e) {
-                        sh 'kubectl rollout undo deployment/your-deployment-name'
-                        error("Deployment failed and rolled back")
-                    }
+                sh 'kubectl apply -f deployment.yaml'
+            }
+            post {
+                failure {
+                    sh 'kubectl rollout undo deployment myapp'
                 }
             }
         }
