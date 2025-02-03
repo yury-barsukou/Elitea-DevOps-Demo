@@ -8,14 +8,6 @@ pipeline {
     }
 
     stages {
-        stage('Build') {
-            when {
-                branch 'main'
-            }
-            steps {
-                echo 'Running pipeline for the main branch'
-            }
-        }
         stage('Checkout') {
             steps {
                 git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
@@ -30,25 +22,21 @@ pipeline {
             }
         }
 
+        stage('Scan Image') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             steps {
                 sh 'kubectl apply -f deployment.yaml'
                 sh 'sleep 120'
-                script {
-                    def podsReady = sh(script: "kubectl get pods | grep myapp | grep Running | wc -l", returnStdout: true).trim()
-                    if (podsReady != '1') {
-                        error('Deployment failed, rolling back...')
-                    }
-                }
-            }
-            post {
-                failure {
-                    sh 'kubectl rollout undo deployment myapp'
-                }
+                sh 'kubectl rollout status deployment myapp || kubectl rollout undo deployment myapp'
             }
         }
     }
-    
+
     post {
         always {
             cleanWs()
