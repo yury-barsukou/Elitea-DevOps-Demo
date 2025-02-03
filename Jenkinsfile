@@ -1,10 +1,10 @@
 pipeline {
     agent any
 
-    environment {
-        DOCKER_REGISTRY = 'your-docker-registry'
-        IMAGE_NAME = 'your-image-name'
-        KUBERNETES_NAMESPACE = 'your-kubernetes-namespace'
+     environment {
+        DOCKER_REGISTRY = 'localhost:5000'
+        IMAGE_NAME = 'myapp'
+        IMAGE_TAG = 'latest'
     }
 
     stages {
