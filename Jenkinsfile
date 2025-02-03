@@ -2,37 +2,58 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = 'localhost:5000'
-        DOCKER_IMAGE = 'myapp'
-        DOCKER_TAG = 'latest'
+        DOCKER_REGISTRY = 'your-docker-registry'
+        IMAGE_NAME = 'your-image-name'
+        IMAGE_TAG = 'latest'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
+                checkout scm
             }
         }
 
-        stage('Build Image') {
+        stage('Build Docker Image') {
             steps {
-                sh 'eval $(minikube docker-env)'
-                sh 'docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} .'
-                sh 'docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
+                script {
+                    docker.build("${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}")
+                }
             }
         }
 
-        stage('Scan Image') {
+        stage('Push Docker Image') {
             steps {
-                sh 'trivy image ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
+                script {
+                    docker.withRegistry('', DOCKER_REGISTRY) {
+                        docker.image("${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}").push()
+                    }
+                }
+            }
+        }
+
+        stage('Scan Docker Image') {
+            steps {
+                script {
+                    def scanResult = sh(script: "trivy image --severity CRITICAL ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}", returnStatus: true)
+                    if (scanResult != 0) {
+                        error("Image scan failed with critical vulnerabilities.")
+                    }
+                }
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh 'kubectl apply -f deployment.yaml'
-                sh 'sleep 120'
-                sh 'kubectl rollout status deployment myapp || kubectl rollout undo deployment myapp'
+                script {
+                    sh 'kubectl apply -f deployment.yaml'
+                    sleep 120
+                    def rolloutStatus = sh(script: 'kubectl rollout status deployment/your-deployment-name', returnStatus: true)
+                    if (rolloutStatus != 0) {
+                        sh 'kubectl rollout undo deployment/your-deployment-name'
+                        error("Deployment failed, rolled back to the previous version.")
+                    }
+                }
             }
         }
     }
