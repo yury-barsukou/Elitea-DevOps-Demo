@@ -1,7 +1,7 @@
 pipeline {
     agent any
 
-     environment {
+    environment {
         DOCKER_REGISTRY = 'localhost:5000'
         IMAGE_NAME = 'myapp'
         IMAGE_TAG = 'latest'
@@ -56,11 +56,10 @@ pipeline {
                     def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
                     sh "kubectl set image -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} ${env.IMAGE_NAME}=${imageTag}"
                     sh "kubectl rollout status -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} --timeout=120s"
-                }
-            }
-            post {
-                failure {
-                    sh "kubectl rollout undo -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME}"
+                    
+                    // Check if pods are ready, if not, rollback
+                    sh "kubectl get pods -n ${env.KUBERNETES_NAMESPACE}"
+                    sh "kubectl rollout status -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} --timeout=120s || kubectl rollout undo -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME}"
                 }
             }
         }
