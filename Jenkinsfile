@@ -32,15 +32,6 @@ pipeline {
             }
         }
 
-        stage('Push Docker Image') {
-            steps {
-                script {
-                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
-                    sh "docker push ${imageTag}"
-                }
-            }
-        }
-
         stage('Scan Docker Image') {
             steps {
                 script {
