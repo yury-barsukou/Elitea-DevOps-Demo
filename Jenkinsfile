@@ -33,6 +33,13 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh 'kubectl apply -f deployment.yaml'
+                sh 'sleep 120'
+                script {
+                    def podsReady = sh(script: "kubectl get pods | grep myapp | grep Running | wc -l", returnStdout: true).trim()
+                    if (podsReady != '1') {
+                        error('Deployment failed, rolling back...')
+                    }
+                }
             }
             post {
                 failure {
