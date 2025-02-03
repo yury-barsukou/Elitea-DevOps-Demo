@@ -5,6 +5,8 @@ pipeline {
         DOCKER_REGISTRY = 'localhost:5000'
         IMAGE_NAME = 'myapp'
         IMAGE_TAG = 'latest'
+        KUBERNETES_NAMESPACE = 'default'
+        
     }
 
     stages {
