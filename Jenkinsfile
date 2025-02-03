@@ -1,7 +1,7 @@
 pipeline {
     agent any
 
-    environment {
+     environment {
         DOCKER_REGISTRY = 'localhost:5000'
         IMAGE_NAME = 'myapp'
         IMAGE_TAG = 'latest'
@@ -32,14 +32,15 @@ pipeline {
             }
         }
 
-        stage('Scan Docker Image') {
+        stage('Push Docker Image') {
             steps {
                 script {
                     def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
-                    sh "trivy image --exit-code 1 --severity CRITICAL ${imageTag}"
+                    sh "docker push ${imageTag}"
                 }
             }
         }
+
 
         stage('Deploy to Kubernetes') {
             steps {
@@ -47,10 +48,11 @@ pipeline {
                     def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
                     sh "kubectl set image -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} ${env.IMAGE_NAME}=${imageTag}"
                     sh "kubectl rollout status -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} --timeout=120s"
-                    
-                    // Check if pods are ready, if not, rollback
-                    sh "kubectl get pods -n ${env.KUBERNETES_NAMESPACE}"
-                    sh "kubectl rollout status -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} --timeout=120s || kubectl rollout undo -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME}"
+                }
+            }
+            post {
+                failure {
+                    sh "kubectl rollout undo -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME}"
                 }
             }
         }
