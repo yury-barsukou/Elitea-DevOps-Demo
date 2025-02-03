@@ -1,68 +1,46 @@
 pipeline {
     agent any
-
-     environment {
-        DOCKER_REGISTRY = 'localhost:5000'
-        IMAGE_NAME = 'myapp'
-        IMAGE_TAG = 'latest'
-        KUBERNETES_NAMESPACE = 'default'
-        
+    environment {
+        APP_NAME = 'myapp'
+        TAG = 'latest'
+        REGISTRY = 'localhost:5000'
+        KUBE_NAMESPACE = 'default'
     }
-
     stages {
-        stage('Build') {
-            when {
-                branch 'main'
-            }
-            steps {
-                echo 'Running pipeline for the main branch'
-            }
-        }
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Build Docker Image') {
+        stage('Setup Environment') {
             steps {
                 script {
-                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
-                    //sh 'eval $(minikube docker-env)'
-                    sh "docker build -t ${imageTag} ."
+                    echo "Environment setup with APP_NAME=${env.APP_NAME}, TAG=${env.TAG}, REGISTRY=${env.REGISTRY}"
                 }
             }
         }
-
-        stage('Push Docker Image') {
+        stage('Build and Push Docker Image') {
             steps {
                 script {
-                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
-                    sh "docker push ${imageTag}"
+                    sh 'docker build -t $REGISTRY/$APP_NAME:$TAG .'
+                    sh 'docker push $REGISTRY/$APP_NAME:$TAG'
                 }
             }
         }
-
-
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
-                    sh "kubectl set image -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} ${env.IMAGE_NAME}=${imageTag}"
-                    sh "kubectl rollout status -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} --timeout=120s"
-                }
-            }
-            post {
-                failure {
-                    sh "kubectl rollout undo -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME}"
+                    sh 'kubectl apply -f deployment.yaml --namespace=$KUBE_NAMESPACE'
+                    sh 'sleep 120' // Wait for 2 minutes
+                    // Check rollout status
+                    def rolloutStatus = sh(script: "kubectl rollout status deployment/$APP_NAME --namespace=$KUBE_NAMESPACE", returnStatus: true)
+                    if (rolloutStatus != 0) {
+                        echo "Deployment failed, rolling back..."
+                        sh "kubectl rollout undo deployment/$APP_NAME --namespace=$KUBE_NAMESPACE"
+                    }
                 }
             }
         }
     }
-    
     post {
         always {
-            cleanWs()
+            echo 'Cleaning up...'
+            sh 'docker rmi $REGISTRY/$APP_NAME:$TAG'
         }
     }
 }
