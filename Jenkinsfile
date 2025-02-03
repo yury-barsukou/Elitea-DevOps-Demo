@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = 'localhost:5000'
-        DOCKER_IMAGE = 'myapp'
-        DOCKER_TAG = 'latest'
+        DOCKER_REGISTRY = 'your-docker-registry'
+        IMAGE_NAME = 'your-image-name'
+        KUBERNETES_NAMESPACE = 'your-kubernetes-namespace'
     }
 
     stages {
@@ -18,32 +18,49 @@ pipeline {
         }
         stage('Checkout') {
             steps {
-                git branch: 'main', credentialsId: 'github-pat-id', url: 'https://github.com/sathishravigithub/LLM.git'
+                checkout scm
             }
         }
 
-        stage('Build Image') {
+        stage('Build Docker Image') {
             steps {
-                sh 'eval $(minikube docker-env)'
-                sh 'docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} .'
-                sh 'docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}'
+                script {
+                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    sh 'eval $(minikube docker-env)'
+                    sh "docker build -t ${imageTag} ."
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    sh "docker push ${imageTag}"
+                }
+            }
+        }
+
+        stage('Scan Docker Image') {
+            steps {
+                script {
+                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    sh "trivy image --exit-code 1 --severity CRITICAL ${imageTag}"
+                }
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh 'kubectl apply -f deployment.yaml'
-                sh 'sleep 120'
                 script {
-                    def podsReady = sh(script: "kubectl get pods | grep myapp | grep Running | wc -l", returnStdout: true).trim()
-                    if (podsReady != '1') {
-                        error('Deployment failed, rolling back...')
-                    }
+                    def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    sh "kubectl set image -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} ${env.IMAGE_NAME}=${imageTag}"
+                    sh "kubectl rollout status -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME} --timeout=120s"
                 }
             }
             post {
                 failure {
-                    sh 'kubectl rollout undo deployment myapp'
+                    sh "kubectl rollout undo -n ${env.KUBERNETES_NAMESPACE} deployment/${env.IMAGE_NAME}"
                 }
             }
         }
