@@ -28,7 +28,7 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${env.DOCKER_REGISTRY}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
-                    sh 'eval $(minikube docker-env)'
+                    //sh 'eval $(minikube docker-env)'
                     sh "docker build -t ${imageTag} ."
                 }
             }
