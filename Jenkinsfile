@@ -27,7 +27,6 @@ pipeline {
                 script {
                     sh 'kubectl apply -f deployment.yaml --namespace=$KUBE_NAMESPACE'
                     sh 'sleep 120' // Wait for 2 minutes
-                    // Check rollout status
                 }
             }
         }
