@@ -28,7 +28,7 @@ pipeline {
                      def applyStatus = sh(script: "kubectl apply -f deployment.yaml --namespace=$KUBE_NAMESPACE", returnStatus: true)
 
                      if (applyStatus != 0) {
-                         echo "⚠️ Warning: kubectl apply failed, but continuing..."
+                         echo "⚠️ Warning: kubectl apply failed, Rolling back to the previous version..."
                       }
                     // Check rollout status
     
