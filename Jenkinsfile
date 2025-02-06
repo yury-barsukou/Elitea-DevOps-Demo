@@ -27,6 +27,12 @@ pipeline {
                 script {
                     sh 'kubectl apply -f deployment.yaml --namespace=$KUBE_NAMESPACE'
                     sh 'sleep 120' // Wait for 2 minutes
+                    // Check rollout status
+                    def rolloutStatus = sh(script: "kubectl rollout status deployment/$APP_NAME --namespace=$KUBE_NAMESPACE", returnStatus: true)
+                    if (rolloutStatus != 0) {
+                        echo "Deployment failed, rolling back..."
+                        sh "kubectl rollout undo deployment/$APP_NAME --namespace=$KUBE_NAMESPACE"
+                    }
                 }
             }
         }
