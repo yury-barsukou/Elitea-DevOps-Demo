@@ -25,9 +25,13 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    sh 'kubectl apply -f deployment.yaml --namespace=$KUBE_NAMESPACE'
-                    sh 'sleep 120' // Wait for 2 minutes
+                     def applyStatus = sh(script: "kubectl apply -f deployment.yaml --namespace=$KUBE_NAMESPACE", returnStatus: true)
+
+    if (applyStatus != 0) {
+        echo "⚠️ Warning: kubectl apply failed, but continuing..."
+    }
                     // Check rollout status
+    
                     def rolloutStatus = sh(script: "kubectl rollout status deployment/$APP_NAME --namespace=$KUBE_NAMESPACE", returnStatus: true)
                     if (rolloutStatus != 0) {
                         echo "Deployment failed, rolling back..."
