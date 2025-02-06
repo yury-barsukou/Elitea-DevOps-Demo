@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment222
+kind: Deployment2
 metadata:
   name: myapp
 spec:
