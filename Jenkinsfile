@@ -1,4 +1,4 @@
-ipeline {
+pipeline {
    environment {
      DOCKER_REGISTRY = 'localhost:5000'
      APP_NAME='myapp'
