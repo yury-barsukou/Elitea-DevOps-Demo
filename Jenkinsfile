@@ -1,78 +1,46 @@
-peline {
-   environment {
-     DOCKER_REGISTRY = 'localhost:5000'
-     APP_NAME='myapp'
-     GIT_SHA = '${GIT_COMMIT.substring(0,7)}'
-     security_scan_tool = 'trivy'
-   }
-   agent any
-   stages {
-     stage('Checkout') {
-       steps {
-         git branch: 'main', url: 'https://github.com/sathishravigithub/LLM.git'
-       }
-     }
-     stage('Install Dependencies') {
-       steps {
-         sh 'composer install'
-       }
-     }
-     stage('Run Unit Tests') {
-       steps {
-         sh 'phpunit'
-       }
-     }
-     stage('Sonar Analysis') {
-       steps {
-         script {
-           if(fileExists('sonar-project.properties')) {
-             sh 'sonar-scanner'
-           } else {
-             sh 'sonar-scanner -Dsonar.projectKey=myapp -Dsonar.sources=. -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin'
-           }
-         }
-       }
-     }
-     stage('Quality Gate') {
-       steps {
-         waitForQualityGate abortPipeline: true
-       }
-     }
-     stage('Build Docker Image') {
-       steps {
-         script {
-           sh 'docker build -t $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA .'
-           sh 'docker push $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA'
-         }
-       }
-     }
-     stage('Trivy Scan') {
-       steps {
-         sh 'trivy image --severity=HIGH,CRITICAL $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA'
-       }
-     }
-     stage('Deploy') {
-       steps {
-         script {
-           if(fileExists('helm')) {
-             sh 'helm upgrade --install myapp helm --set image.repository=$DOCKER_REGISTRY/$APP_NAME,image.tag=$GIT_SHA'
-           } else {
-             sh 'sed -i "s|image: .*|image: $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA|" deployment.yaml'
-             sh 'kubectl apply -f deployment.yaml'
-           }
-         }
-       }
-     }
-   }
-   post {
-     failure {
-       script {
-         if(fileExists('helm')) {
-           sh 'helm rollback myapp'
-         } else {
-           sh 'kubectl rollout undo deployment/myapp'
-         }
-       }
-     }
-   }
- } 
+pipeline {
+    agent any
+    environment {
+        APP_NAME = 'myapp'
+        TAG = 'latest'
+        REGISTRY = 'localhost:5000'
+        KUBE_NAMESPACE = 'default'
+    }
+    stages {
+        stage('Setup Environment') {
+            steps {
+                script {
+                    echo "Environment setup with APP_NAME=${env.APP_NAME}, TAG=${env.TAG}, REGISTRY=${env.REGISTRY}"
+                }
+            }
+        }
+        stage('Build and Push Docker Image') {
+            steps {
+                script {
+                    sh 'docker build -t $REGISTRY/$APP_NAME:$TAG .'
+                    sh 'docker push $REGISTRY/$APP_NAME:$TAG'
+                }
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    sh 'kubectl apply -f deployment.yaml --namespace=$KUBE_NAMESPACE'
+                    sh 'sleep 120' // Wait for 2 minutes
+                    // Check rollout status
+                    def rolloutStatus = sh(script: "kubectl rollout status deployment/$APP_NAME --namespace=$KUBE_NAMESPACE", returnStatus: true)
+                    if (rolloutStatus != 0) {
+                        echo "Deployment failed, rolling back..."
+                        sh "kubectl rollout undo deployment/$APP_NAME --namespace=$KUBE_NAMESPACE"
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            echo 'Cleaning up...'
+            sh 'docker rmi $REGISTRY/$APP_NAME:$TAG'
+        }
+    }
+}
