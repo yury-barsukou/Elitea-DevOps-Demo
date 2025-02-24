@@ -43,4 +43,4 @@ pipeline {
             sh 'docker rmi $REGISTRY/$APP_NAME:$TAG'
         }
     }
-}
+ }
