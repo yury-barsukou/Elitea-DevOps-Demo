@@ -20,7 +20,16 @@ pipeline {
              sh 'sonar-scanner'
            } else {
              //sh 'sonar-scanner -Dsonar.projectKey=myapp -Dsonar.sources=. -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin'
-               sh 'sonar-scanner'
+                withSonarQubeEnv('SonarQube') {  // Ensure 'SonarQube' matches your Jenkins global tool name
+                        sh '''
+                            sonar-scanner \
+                            -Dsonar.projectKey=mymlpocs \
+                            -Dsonar.organization=mymlpocs \
+                            -Dsonar.sources=. \
+                            -Dsonar.host.url=https://sonarcloud.io \
+                            -Dsonar.login=${SONAR_TOKEN}
+                        '''
+                    }
            }
          }
        }
