@@ -28,7 +28,8 @@ pipeline {
            if(fileExists('sonar-project.properties')) {
              sh 'sonar-scanner'
            } else {
-             sh 'sonar-scanner -Dsonar.projectKey=myapp -Dsonar.sources=. -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin'
+             //sh 'sonar-scanner -Dsonar.projectKey=myapp -Dsonar.sources=. -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin'
+               sh 'sonar-scanner'
            }
          }
        }
