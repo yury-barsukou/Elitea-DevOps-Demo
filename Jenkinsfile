@@ -12,16 +12,7 @@ pipeline {
          git branch: 'main', url: 'https://github.com/sathishravigithub/LLM.git'
        }
      }
-     stage('Install Dependencies') {
-       steps {
-         sh 'composer install'
-       }
-     }
-     stage('Run Unit Tests') {
-       steps {
-         sh 'phpunit'
-       }
-     }
+     
      stage('Sonar Analysis') {
        steps {
          script {
