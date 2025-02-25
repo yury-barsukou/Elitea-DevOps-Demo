@@ -1,16 +1,22 @@
 pipeline {
     agent any
+
     environment {
-        DOCKER_REGISTRY = 'localhost:5000'
-        APP_NAME = 'myapp'
+        DOCKER_REGISTRY = "localhost:5000"
+        APP_NAME = "myapp"
+        Sonar_Url = "https://localhost"
+        Sonar_Token = "sonarqube"
+        security_scan_tool = "trivy"
         GIT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
+
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                checkout scm
+                git 'https://github.com/sathishravigithub/LLM.git'
             }
         }
+
         stage('Static Code Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
@@ -18,39 +24,56 @@ pipeline {
                 }
             }
         }
+
         stage('Quality Gate') {
             steps {
-                timeout(time: 1, unit: 'HOURS') {
-                    waitForQualityGate abortPipeline: true
+                script {
+                    def qualityGate = waitForQualityGate()
+                    if (qualityGate.status != 'OK' && qualityGate.status != 'NONE') {
+                        error "Pipeline aborted due to quality gate failure: ${qualityGate.status}"
+                    }
                 }
             }
         }
-        stage('Build and Push Docker Image') {
+
+        stage('Docker Build and Push') {
             steps {
-                sh '''
-                    docker build -t $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA .
-                    docker push $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA
-                '''
+                sh """
+                docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
+                docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
+                """
             }
         }
+
         stage('Security Scan') {
             steps {
-                sh 'trivy image --severity HIGH,CRITICAL $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA'
+                sh "${security_scan_tool} image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}"
             }
         }
-        stage('Deploy to Kubernetes') {
+
+        stage('Deploy') {
             steps {
-                sh '''
-                    sed -i 's|image: .*|image: $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA|' deployment.yaml
-                    kubectl apply -f deployment.yaml
-                '''
+                script {
+                    if (fileExists('helm/values.yaml')) {
+                        sh "helm upgrade --install ${APP_NAME} ./helm --set image.tag=${GIT_SHA}"
+                    } else {
+                        sh "sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
+                        sh "kubectl apply -f deployment.yaml"
+                    }
+                }
             }
         }
     }
+
     post {
         failure {
-            echo 'Rolling back to previous stable build...'
-            sh 'kubectl rollout undo deployment/$APP_NAME'
+            script {
+                if (fileExists('helm/values.yaml')) {
+                    sh "helm rollback ${APP_NAME} 1"
+                } else {
+                    sh "kubectl rollout undo deployment/${APP_NAME}"
+                }
+            }
         }
     }
 }
