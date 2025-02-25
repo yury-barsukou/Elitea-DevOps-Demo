@@ -50,19 +50,20 @@ pipeline {
         }
 
         stage('Deploy') {
-            steps {
-                script {
-                    if (fileExists('helm/values.yaml')) {
-                        sh "sed -i 's/tag:.*/tag: ${GIT_SHA}/' helm/values.yaml"
-                        sh "helm upgrade --install ${APP_NAME} helm/ -f helm/values.yaml"
-                    } else if (fileExists('deployment.yaml')) {
-                        sh "sed -i 's|image:.*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
-                        sh "kubectl apply -f deployment.yaml"
-                    } else {
-                        error "No deployment configuration found!"
-                    }
-                }
-            }
+             steps {
+                 script {
+                     if (fileExists('helm/values.yaml')) {
+                         sh "helm upgrade --install ${APP_NAME} helm/ --set image.tag=${GIT_SHA}"
+                     } else {
+                         if (isUnix()) {
+                             sh "sed -i 's|image:.*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
+                         } else {
+                             sh "sed -i '' 's|image:.*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
+                         }
+                         sh "kubectl apply -f deployment.yaml"
+                     }
+                 }
+             }
         }
     }
 
