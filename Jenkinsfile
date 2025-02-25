@@ -18,7 +18,7 @@ pipeline {
         }
 
         stage('Static Code Analysis') {
-             steps {
+            steps {
                 withSonarQubeEnv('SonarQube') {
                     sh 'sonar-scanner'
                 }
@@ -38,8 +38,12 @@ pipeline {
 
         stage('Docker Build and Push') {
             steps {
-                sh "docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} ."
-                sh "docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}"
+                script {
+                    sh """
+                    docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
+                    docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
+                    """
+                }
             }
         }
 
@@ -49,25 +53,27 @@ pipeline {
             }
         }
 
-         stage('Deploy') {
-             steps {
-                 script {
-                     def osType = sh(script: 'uname', returnStdout: true).trim()
-                     if (fileExists('helm/values.yaml')) {
-                         sh "sed -i 's/tag:.*/tag: ${GIT_SHA}/' helm/values.yaml"
-                         sh "helm upgrade --install ${APP_NAME} helm/ -f helm/values.yaml"
-                     } else if (fileExists('deployment.yaml')) {
-                         if (osType == 'Darwin') {
-                             sh "sed -i '' 's|image:.*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
-                         } else {
-                             sh "sed -i 's|image:.*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
-                         }
-                         sh "kubectl apply -f deployment.yaml"
-                     } else {
-                         error "No deployment configuration found!"
-                     }
-                 }
-             }
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    if (fileExists('helm/values.yaml')) {
+                        sh """
+                        helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
+                        """
+                    } else if (fileExists('deployment.yaml')) {
+                        sh """
+                        if [[ "$OSTYPE" == "darwin"* ]]; then
+                            sed -i '' 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml
+                        else
+                            sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml
+                        fi
+                        kubectl apply -f deployment.yaml
+                        """
+                    } else {
+                        error "No deployment configuration found (helm/values.yaml or deployment.yaml)"
+                    }
+                }
+            }
         }
     }
 
@@ -75,7 +81,9 @@ pipeline {
         failure {
             script {
                 // Rollback mechanism
-                sh "kubectl rollout undo deployment/${APP_NAME}"
+                sh """
+                kubectl rollout undo deployment/${APP_NAME} -n default
+                """
             }
         }
     }
