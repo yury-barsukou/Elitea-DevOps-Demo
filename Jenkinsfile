@@ -53,27 +53,30 @@ pipeline {
             }
         }
 
-        stage('Deploy to Kubernetes') {
-            steps {
-                script {
-                    if (fileExists('helm/values.yaml')) {
-                        sh """
-                        helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
-                        """
-                    } else if (fileExists('deployment.yaml')) {
-                        sh """
-                        if [[ "$OSTYPE" == "darwin"* ]]; then
-                            sed -i '' 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml
-                        else
-                            sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml
-                        fi
-                        kubectl apply -f deployment.yaml
-                        """
-                    } else {
-                        error "No deployment configuration found (helm/values.yaml or deployment.yaml)"
-                    }
-                }
-            }
+       stage('Deploy') {
+             steps {
+                 script {
+                     if (fileExists('helm/values.yaml')) {
+                         sh '''
+                         helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
+                         '''
+                     } else if (fileExists('deployment.yaml')) {
+                         sh '''
+                         case "$(uname -s)" in
+                             Darwin)
+                                 sed -i '' 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
+                                 ;;
+                             *)
+                                 sed -i 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
+                                 ;;
+                         esac
+                         kubectl apply -f deployment.yaml
+                         '''
+                     } else {
+                         error "No deployment configuration found (helm/values.yaml or deployment.yaml)"
+                     }
+                 }
+             }
         }
     }
 
