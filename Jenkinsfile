@@ -13,7 +13,7 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                git 'https://github.com/sathishravigithub/LLM.git'
+                 checkout scm
             }
         }
 
