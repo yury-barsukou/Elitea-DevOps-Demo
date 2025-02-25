@@ -11,26 +11,24 @@ pipeline {
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Checkout SCM') {
             steps {
-                 checkout scm
+                checkout scm
             }
         }
 
         stage('Static Code Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'sonar-scanner'
-                }
+                sh "sonar-scanner"
             }
         }
 
         stage('Quality Gate') {
             steps {
                 script {
-                    def qualityGate = waitForQualityGate()
-                    if (qualityGate.status != 'OK' && qualityGate.status != 'NONE') {
-                        error "Pipeline aborted due to quality gate failure: ${qualityGate.status}"
+                    def qg = waitForQualityGate()
+                    if (qg.status != 'OK' && qg.status != 'NONE') {
+                        error "Pipeline aborted due to quality gate failure: ${qg.status}"
                     }
                 }
             }
@@ -38,10 +36,8 @@ pipeline {
 
         stage('Docker Build and Push') {
             steps {
-                sh """
-                docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
-                docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
-                """
+                sh "docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} ."
+                sh "docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}"
             }
         }
 
@@ -55,10 +51,13 @@ pipeline {
             steps {
                 script {
                     if (fileExists('helm/values.yaml')) {
-                        sh "helm upgrade --install ${APP_NAME} ./helm --set image.tag=${GIT_SHA}"
-                    } else {
-                        sh "sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
+                        sh "sed -i 's/tag:.*/tag: ${GIT_SHA}/' helm/values.yaml"
+                        sh "helm upgrade --install ${APP_NAME} helm/ -f helm/values.yaml"
+                    } else if (fileExists('deployment.yaml')) {
+                        sh "sed -i 's|image:.*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml"
                         sh "kubectl apply -f deployment.yaml"
+                    } else {
+                        error "No deployment configuration found!"
                     }
                 }
             }
@@ -68,11 +67,8 @@ pipeline {
     post {
         failure {
             script {
-                if (fileExists('helm/values.yaml')) {
-                    sh "helm rollback ${APP_NAME} 1"
-                } else {
-                    sh "kubectl rollout undo deployment/${APP_NAME}"
-                }
+                // Rollback mechanism
+                sh "kubectl rollout undo deployment/${APP_NAME}"
             }
         }
     }
