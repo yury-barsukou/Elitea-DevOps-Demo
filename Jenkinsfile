@@ -2,7 +2,7 @@ pipeline {
    environment {
      DOCKER_REGISTRY = 'localhost:5000'
      APP_NAME='myapp'
-     GIT_SHA = '${GIT_COMMIT.substring(0,7)}'
+     GIT_SHA="${GIT_COMMIT:0:7}"
      security_scan_tool = 'trivy'
    }
    agent any
