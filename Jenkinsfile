@@ -62,7 +62,7 @@ pipeline {
            if(fileExists('helm')) {
              sh 'helm upgrade --install myapp helm --set image.repository=$DOCKER_REGISTRY/$APP_NAME,image.tag=$GIT_SHA'
            } else {
-             sh 'sed -i "s|image: .*|image: $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA|" deployment.yaml'
+             sh "sed -i '' 's|image: .*|image: ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.GIT_SHA}|' deployment.yaml"
              sh 'kubectl apply -f deployment.yaml'
            }
          }
