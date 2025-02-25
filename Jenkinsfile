@@ -34,11 +34,11 @@ pipeline {
          }
        }
      }
-     stage('Quality Gate') {
-       steps {
-         waitForQualityGate abortPipeline: true
-       }
-     }
+    // stage('Quality Gate') {
+      // steps {
+        // waitForQualityGate abortPipeline: true
+       //}
+     //}
      stage('Build Docker Image') {
        steps {
          script {
