@@ -18,8 +18,10 @@ pipeline {
         }
 
         stage('Static Code Analysis') {
-            steps {
-                sh "sonar-scanner"
+             steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'sonar-scanner'
+                }
             }
         }
 
