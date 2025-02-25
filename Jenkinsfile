@@ -1,83 +1,56 @@
 pipeline {
-   environment {
-     DOCKER_REGISTRY = 'localhost:5000'
-     APP_NAME='myapp'
-     //GIT_SHA='${GIT_COMMIT:0:7}'
-     security_scan_tool = 'trivy'
-   }
-   agent any
-   stages {
-     stage('Checkout') {
-       steps {
-         git branch: 'main', url: 'https://github.com/sathishravigithub/LLM.git'
-         script {
-           env.GIT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-           echo "Computed GIT_SHA: ${env.GIT_SHA}"
-         }
-       }
-     }
-     
-     stage('Sonar Analysis') {
-       steps {
-         script {
-           if(fileExists('sonar-project.properties')) {
-             sh 'sonar-scanner'
-           } else {
-             //sh 'sonar-scanner -Dsonar.projectKey=myapp -Dsonar.sources=. -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin'
-                withSonarQubeEnv('SonarQube') {  // Ensure 'SonarQube' matches your Jenkins global tool name
-                        sh '''
-                            sonar-scanner \
-                            -Dsonar.projectKey=mymlpocs \
-                            -Dsonar.organization=mymlpocs \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=https://sonarcloud.io \
-                            -Dsonar.login=${SONAR_TOKEN}
-                        '''
-                    }
-           }
-         }
-       }
-     }
-    // stage('Quality Gate') {
-      // steps {
-        // waitForQualityGate abortPipeline: true
-       //}
-     //}
-     stage('Build Docker Image') {
-       steps {
-         script {
-           sh "docker build -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.GIT_SHA} ."
-           sh "docker push ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.GIT_SHA}"
-         }
-       }
-     }
-     stage('Trivy Scan') {
-       steps {
-         sh 'trivy image --severity=HIGH,CRITICAL $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA'
-       }
-     }
-     stage('Deploy') {
-       steps {
-         script {
-           if(fileExists('helm')) {
-             sh 'helm upgrade --install myapp helm --set image.repository=$DOCKER_REGISTRY/$APP_NAME,image.tag=$GIT_SHA'
-           } else {
-             sh "sed -i '' 's|image: .*|image: ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.GIT_SHA}|' deployment.yaml"
-             sh 'kubectl apply -f deployment.yaml'
-           }
-         }
-       }
-     }
-   }
-   post {
-     failure {
-       script {
-         if(fileExists('helm')) {
-           sh 'helm rollback myapp'
-         } else {
-           sh 'kubectl rollout undo deployment/myapp'
-         }
-       }
-     }
-   }
- } 
+    agent any
+    environment {
+        DOCKER_REGISTRY = 'localhost:5000'
+        APP_NAME = 'myapp'
+        GIT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Static Code Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'sonar-scanner'
+                }
+            }
+        }
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        stage('Build and Push Docker Image') {
+            steps {
+                sh '''
+                    docker build -t $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA .
+                    docker push $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA
+                '''
+            }
+        }
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image --severity HIGH,CRITICAL $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA'
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                    sed -i 's|image: .*|image: $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA|' deployment.yaml
+                    kubectl apply -f deployment.yaml
+                '''
+            }
+        }
+    }
+    post {
+        failure {
+            echo 'Rolling back to previous stable build...'
+            sh 'kubectl rollout undo deployment/$APP_NAME'
+        }
+    }
+}
