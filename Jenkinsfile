@@ -10,8 +10,10 @@ pipeline {
      stage('Checkout') {
        steps {
          git branch: 'main', url: 'https://github.com/sathishravigithub/LLM.git'
-         GIT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-         echo "GIT_SHA: ${GIT_SHA}"
+         script {
+           env.GIT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+           echo "Computed GIT_SHA: ${env.GIT_SHA}"
+         }
        }
      }
      
@@ -44,8 +46,8 @@ pipeline {
      stage('Build Docker Image') {
        steps {
          script {
-           sh 'docker build -t $DOCKER_REGISTRY/$APP_NAME:${GIT_SHA} .'
-           sh 'docker push $DOCKER_REGISTRY/$APP_NAME:${GIT_SHA}'
+           sh 'docker build -t $DOCKER_REGISTRY/$APP_NAME:${env.GIT_SHA} .'
+           sh 'docker push $DOCKER_REGISTRY/$APP_NAME:${env.GIT_SHA}'
          }
        }
      }
