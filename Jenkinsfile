@@ -46,8 +46,8 @@ pipeline {
      stage('Build Docker Image') {
        steps {
          script {
-           sh 'docker build -t $DOCKER_REGISTRY/$APP_NAME:${env.GIT_SHA} .'
-           sh 'docker push $DOCKER_REGISTRY/$APP_NAME:${env.GIT_SHA}'
+           sh "docker build -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.GIT_SHA} ."
+           sh "docker push ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.GIT_SHA}"
          }
        }
      }
