@@ -16,6 +16,26 @@ pipeline {
                 checkout scm
             }
         }
+         stage('Setup PHP with Xdebug') {
+            steps {
+                sh 'sudo add-apt-repository ppa:ondrej/php -y'
+                sh 'sudo apt-get update'
+                sh 'sudo apt-get install -y php8.1 php8.1-cli php8.1-xml php8.1-xdebug'
+                sh 'php -v'
+            }
+        }
+
+        stage('Install dependencies with Composer') {
+            steps {
+                sh 'composer update --no-ansi --no-interaction --no-progress'
+            }
+        }
+
+        stage('Run tests with PHPUnit') {
+            steps {
+                sh 'vendor/bin/phpunit --coverage-clover=coverage.xml'
+            }
+        }
 
         stage('Static Code Analysis') {
             steps {
