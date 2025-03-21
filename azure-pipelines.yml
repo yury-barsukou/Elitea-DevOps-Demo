@@ -1,0 +1,122 @@
+trigger:
+- main
+
+variables:
+  DOCKER_REGISTRY: "localhost:5000"
+  APP_NAME: "myapp"
+  Sonar_Url: "https://localhost"
+  Sonar_Token: "sonarqube"
+  security_scan_tool: "trivy"
+  GIT_SHA: "$(Build.SourceVersionShort)"
+
+stages:
+- stage: Checkout
+  displayName: "Checkout SCM"
+  jobs:
+  - job: Checkout
+    steps:
+    - checkout: self
+
+- stage: InstallDependencies
+  displayName: "Install Dependencies"
+  jobs:
+  - job: Install
+    steps:
+    - script: |
+        composer install
+      displayName: "Install PHP Dependencies"
+
+- stage: Build
+  displayName: "Build Application"
+  jobs:
+  - job: Build
+    steps:
+    - script: |
+        echo "Building application..."
+      displayName: "Build Step"
+
+- stage: UnitTests
+  displayName: "Run Unit Tests"
+  jobs:
+  - job: Tests
+    steps:
+    - script: |
+        ./vendor/bin/phpunit
+      displayName: "Run PHPUnit Tests"
+
+- stage: StaticCodeAnalysis
+  displayName: "Static Code Analysis"
+  jobs:
+  - job: SonarQube
+    steps:
+    - task: SonarQubePrepare@4
+      inputs:
+        SonarQube: "SonarQubeServer"
+        scannerMode: "CLI"
+        configMode: "manual"
+        cliProjectKey: "$(APP_NAME)"
+        cliSources: "."
+    - task: SonarQubeAnalyze@4
+    - task: SonarQubePublish@4
+      inputs:
+        pollingTimeoutSec: "300"
+
+- stage: QualityGate
+  displayName: "Quality Gate"
+  dependsOn: StaticCodeAnalysis
+  condition: and(succeeded(), eq(variables['Build.Quality'], 'OK'))
+  jobs:
+  - job: QualityGate
+    steps:
+    - script: |
+        echo "Quality Gate Passed"
+      displayName: "Quality Gate Check"
+
+- stage: DockerBuildPush
+  displayName: "Docker Build and Push"
+  jobs:
+  - job: Docker
+    steps:
+    - script: |
+        docker build -t $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA) .
+        docker push $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)
+      displayName: "Docker Build and Push"
+
+- stage: SecurityScan
+  displayName: "Security Scan"
+  jobs:
+  - job: Security
+    steps:
+    - script: |
+        trivy image $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)
+      displayName: "Run Security Scan"
+
+- stage: Deploy
+  displayName: "Deploy Application"
+  jobs:
+  - job: Deploy
+    steps:
+    - script: |
+        if [ -f "helm/values.yaml" ]; then
+          helm upgrade --install $(APP_NAME) ./helm \
+            --set image.repository=$(DOCKER_REGISTRY)/$(APP_NAME) \
+            --set image.tag=$(GIT_SHA)
+        elif [ -f "deployment.yaml" ]; then
+          case "$(uname -s)" in
+            Darwin*) sed -i '' "s|image: .*|image: $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)|" deployment.yaml ;;
+            *) sed -i "s|image: .*|image: $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)|" deployment.yaml ;;
+          esac
+          kubectl apply -f deployment.yaml
+        else
+          echo "Error: No deployment configuration found!" && exit 1
+      displayName: "Deploy Application"
+
+- stage: Rollback
+  displayName: "Rollback on Failure"
+  condition: failed()
+  jobs:
+  - job: Rollback
+    steps:
+    - script: |
+        echo "Rolling back to previous stable version..."
+      displayName: "Rollback Step"
