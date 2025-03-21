@@ -39,11 +39,28 @@ pipeline {
 
         stage('Docker Build and Push') {
             steps {
+                sh '''
+                docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
+                docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
+                '''
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
                 script {
-                    sh """
-                    docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
-                    docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
-                    """
+                    def qualityGate = sh(script: 'curl -s ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME}', returnStdout: true)
+                    if (qualityGate.contains('OK') || qualityGate.contains('NONE')) {
+                        echo 'Quality Gate Passed'
+                    } else {
+                        error('Quality Gate Failed')
+                    }
                 }
             }
         }
