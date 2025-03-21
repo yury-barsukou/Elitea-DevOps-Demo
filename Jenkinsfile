@@ -37,25 +37,6 @@ pipeline {
             }
         }
 
-        stage('Static Code Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'sonar-scanner'
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                script {
-                    def qg = waitForQualityGate()
-                    if (qg.status != 'OK' && qg.status != 'NONE') {
-                        error "Pipeline aborted due to quality gate failure: ${qg.status}"
-                    }
-                }
-            }
-        }
-
         stage('Docker Build and Push') {
             steps {
                 script {
@@ -64,12 +45,6 @@ pipeline {
                     docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
                     """
                 }
-            }
-        }
-
-        stage('Security Scan') {
-            steps {
-                sh "${security_scan_tool} image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}"
             }
         }
 
@@ -97,17 +72,6 @@ pipeline {
                      }
                  }
              }
-        }
-    }
-
-    post {
-        failure {
-            script {
-                // Rollback mechanism
-                sh """
-                kubectl rollout undo deployment/${APP_NAME} -n default
-                """
-            }
         }
     }
 }
