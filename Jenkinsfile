@@ -16,6 +16,43 @@ pipeline {
                 checkout scm
             }
         }
+
+        stage('Static Code Analysis') {
+            steps {
+                sh 'sonar-scanner -Dsonar.host.url=${Sonar_Url} -Dsonar.login=${Sonar_Token}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def qualityGate = sh(script: "curl -s ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME} -u ${Sonar_Token}:", returnStdout: true).trim()
+                    if (qualityGate.contains('OK') || qualityGate.contains('NONE')) {
+                        echo 'Quality Gate passed'
+                    } else {
+                        error 'Quality Gate failed'
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
+            }
+        }
+
+        stage('Rollback Mechanism') {
+            steps {
+                script {
+                    try {
+                        sh 'kubectl rollout undo deployment/${APP_NAME}'
+                    } catch (Exception e) {
+                        echo 'Rollback failed: ' + e.getMessage()
+                    }
+                }
+            }
+        }
          stage('Setup PHP with Xdebug') {
             steps {
                 sh 'sudo add-apt-repository ppa:ondrej/php -y'
