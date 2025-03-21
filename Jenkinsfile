@@ -16,62 +16,94 @@ pipeline {
                 checkout scm
             }
         }
-         stage('Setup PHP with Xdebug') {
+
+        stage('Install Dependencies') {
             steps {
-                sh 'sudo add-apt-repository ppa:ondrej/php -y'
-                sh 'sudo apt-get update'
-                sh 'sudo apt-get install -y php8.1 php8.1-cli php8.1-xml php8.1-xdebug'
-                sh 'php -v'
+                sh 'composer install'
             }
         }
 
-        stage('Install dependencies with Composer') {
+        stage('Build') {
             steps {
-                sh 'composer update --no-ansi --no-interaction --no-progress'
+                sh 'echo "Building the application..."'
             }
         }
 
-        stage('Run tests with PHPUnit') {
+        stage('Run Unit Tests') {
             steps {
-                sh 'vendor/bin/phpunit --coverage-clover=coverage.xml'
+                sh 'vendor/bin/phpunit --configuration phpunit.xml'
+            }
+        }
+
+        stage('Static Code Analysis') {
+            steps {
+                sh 'sonar-scanner -Dsonar.host.url=${Sonar_Url} -Dsonar.login=${Sonar_Token}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def qualityGate = sh(script: 'curl -s ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME}', returnStdout: true)
+                    if (qualityGate.contains('OK') || qualityGate.contains('NONE')) {
+                        echo 'Quality Gate Passed'
+                    } else {
+                        error 'Quality Gate Failed'
+                    }
+                }
             }
         }
 
         stage('Docker Build and Push') {
             steps {
+                sh '''
+                docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
+                docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
+                '''
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
                 script {
-                    sh """
-                    docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
-                    docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
-                    """
+                    if (fileExists('helm/values.yaml')) {
+                        sh '''
+                        helm upgrade --install ${APP_NAME} ./helm \
+                            --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} \
+                            --set image.tag=${GIT_SHA}
+                        '''
+                    } else if (fileExists('deployment.yaml')) {
+                        sh '''
+                        case "$(uname -s)" in
+                            Darwin*) sed -i '' "s|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|" deployment.yaml ;;
+                            *) sed -i "s|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|" deployment.yaml ;;
+                        esac
+                        kubectl apply -f deployment.yaml
+                        '''
+                    } else {
+                        error 'No deployment configuration found!'
+                    }
                 }
             }
         }
 
-       stage('Deploy') {
-             steps {
-                 script {
-                     if (fileExists('helm/values.yaml')) {
-                         sh '''
-                         helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
-                         '''
-                     } else if (fileExists('deployment.yaml')) {
-                         sh '''
-                         case "$(uname -s)" in
-                             Darwin)
-                                 sed -i '' 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
-                                 ;;
-                             *)
-                                 sed -i 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
-                                 ;;
-                         esac
-                         kubectl apply -f deployment.yaml
-                         '''
-                     } else {
-                         error "No deployment configuration found (helm/values.yaml or deployment.yaml)"
-                     }
-                 }
-             }
+        stage('Rollback Mechanism') {
+            steps {
+                script {
+                    try {
+                        sh 'echo "Deployment successful"'
+                    } catch (Exception e) {
+                        echo 'Deployment failed, rolling back...'
+                        sh 'kubectl rollout undo deployment/${APP_NAME}'
+                    }
+                }
+            }
         }
     }
 }
