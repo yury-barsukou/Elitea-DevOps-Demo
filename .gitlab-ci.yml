@@ -1,0 +1,85 @@
+variables:
+  DOCKER_REGISTRY: "localhost:5000"
+  APP_NAME: "myapp"
+  Sonar_Url: "https://localhost"
+  Sonar_Token: "sonarqube"
+  security_scan_tool: "trivy"
+  GIT_SHA: "$(git rev-parse --short HEAD)"
+
+stages:
+  - checkout
+  - install_dependencies
+  - build
+  - unit_tests
+  - static_code_analysis
+  - quality_gate
+  - docker_build_push
+  - security_scan
+  - deploy
+
+checkout:
+  stage: checkout
+  script:
+    - echo "Checking out the source code..."
+    - git clone $CI_REPOSITORY_URL .
+
+install_dependencies:
+  stage: install_dependencies
+  script:
+    - echo "Installing dependencies..."
+    - composer install
+
+build:
+  stage: build
+  script:
+    - echo "Building the application..."
+    - php artisan build
+
+unit_tests:
+  stage: unit_tests
+  script:
+    - echo "Running unit tests..."
+    - ./vendor/bin/phpunit
+
+static_code_analysis:
+  stage: static_code_analysis
+  script:
+    - echo "Performing static code analysis..."
+    - sonar-scanner -Dsonar.host.url=$Sonar_Url -Dsonar.login=$Sonar_Token
+
+quality_gate:
+  stage: quality_gate
+  script:
+    - echo "Checking quality gate..."
+    - QUALITY_GATE_STATUS=$(curl -s -u $Sonar_Token: "$Sonar_Url/api/qualitygates/project_status?projectKey=$APP_NAME" | jq -r '.projectStatus.status')
+    - if [[ "$QUALITY_GATE_STATUS" != "OK" && "$QUALITY_GATE_STATUS" != "NONE" ]]; then exit 1; fi
+
+docker_build_push:
+  stage: docker_build_push
+  script:
+    - echo "Building and pushing Docker image..."
+    - docker build -t $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA .
+    - docker push $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA
+
+security_scan:
+  stage: security_scan
+  script:
+    - echo "Running security scan..."
+    - trivy image $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying application..."
+    - |
+      if [ -f helm/values.yaml ]; then
+        helm upgrade --install $APP_NAME helm/ --set image.repository=$DOCKER_REGISTRY/$APP_NAME,image.tag=$GIT_SHA
+      elif [ -f deployment.yaml ]; then
+        case "$(uname -s)" in
+          Darwin*) sed -i '' "s|image: .*|image: $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA|" deployment.yaml ;;
+          *) sed -i "s|image: .*|image: $DOCKER_REGISTRY/$APP_NAME:$GIT_SHA|" deployment.yaml ;;
+        esac
+        kubectl apply -f deployment.yaml
+      else
+        echo "Error: No deployment configuration found!" && exit 1
+    - echo "Deployment completed successfully."
