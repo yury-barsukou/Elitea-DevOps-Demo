@@ -37,6 +37,29 @@ pipeline {
             }
         }
 
+        stage('Static Code Analysis') {
+            steps {
+                sh 'sonar-scanner -Dsonar.projectKey=${APP_NAME} -Dsonar.sources=. -Dsonar.host.url=${Sonar_Url} -Dsonar.login=${Sonar_Token}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def qualityGate = sh(script: "curl -s -u ${Sonar_Token}: ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME} | jq -r .projectStatus.status", returnStdout: true).trim()
+                    if (qualityGate != 'OK' && qualityGate != 'NONE') {
+                        error "Quality Gate failed with status: ${qualityGate}"
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
+            }
+        }
+
         stage('Docker Build and Push') {
             steps {
                 script {
@@ -48,7 +71,7 @@ pipeline {
             }
         }
 
-       stage('Deploy') {
+        stage('Deploy') {
              steps {
                  script {
                      if (fileExists('helm/values.yaml')) {
@@ -72,6 +95,18 @@ pipeline {
                      }
                  }
              }
+        }
+
+        stage('Rollback') {
+            steps {
+                script {
+                    try {
+                        sh 'kubectl rollout undo deployment/${APP_NAME}'
+                    } catch (Exception e) {
+                        echo "Rollback failed: ${e.message}"
+                    }
+                }
+            }
         }
     }
 }
