@@ -37,6 +37,29 @@ pipeline {
             }
         }
 
+        stage('Static Code Analysis') {
+            steps {
+                sh 'sonar-scanner -Dsonar.projectKey=${APP_NAME} -Dsonar.sources=. -Dsonar.host.url=${Sonar_Url} -Dsonar.login=${Sonar_Token}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def qualityGate = sh(script: "curl -s -u ${Sonar_Token}: ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME} | jq -r .projectStatus.status", returnStdout: true).trim()
+                    if (qualityGate != 'OK' && qualityGate != 'NONE') {
+                        error "Quality Gate failed with status: ${qualityGate}"
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
+            }
+        }
+
         stage('Docker Build and Push') {
             steps {
                 script {
@@ -48,30 +71,43 @@ pipeline {
             }
         }
 
-       stage('Deploy') {
-             steps {
-                 script {
-                     if (fileExists('helm/values.yaml')) {
-                         sh '''
-                         helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
-                         '''
-                     } else if (fileExists('deployment.yaml')) {
-                         sh '''
-                         case "$(uname -s)" in
-                             Darwin)
-                                 sed -i '' 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
-                                 ;;
-                             *)
-                                 sed -i 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
-                                 ;;
-                         esac
-                         kubectl apply -f deployment.yaml
-                         '''
-                     } else {
-                         error "No deployment configuration found (helm/values.yaml or deployment.yaml)"
-                     }
-                 }
-             }
+        stage('Deploy') {
+            steps {
+                script {
+                    try {
+                        if (fileExists('helm/values.yaml')) {
+                            sh '''
+                            helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
+                            '''
+                        } else if (fileExists('deployment.yaml')) {
+                            sh '''
+                            case "$(uname -s)" in
+                                Darwin)
+                                    sed -i '' 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
+                                    ;;
+                                *)
+                                    sed -i 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
+                                    ;;
+                            esac
+                            kubectl apply -f deployment.yaml
+                            '''
+                        } else {
+                            error "No deployment configuration found (helm/values.yaml or deployment.yaml)"
+                        }
+                    } catch (Exception e) {
+                        echo "Deployment failed. Rolling back to previous version."
+                        sh '''
+                        if (fileExists('helm/values.yaml')) {
+                            helm rollback ${APP_NAME} 0
+                        } else if (fileExists('deployment.yaml')) {
+                            git checkout HEAD~1 deployment.yaml
+                            kubectl apply -f deployment.yaml
+                        }
+                        '''
+                        throw e
+                    }
+                }
+            }
         }
     }
 }
