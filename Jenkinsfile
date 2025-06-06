@@ -37,6 +37,23 @@ pipeline {
             }
         }
 
+        stage('Static Code Analysis') {
+            steps {
+                sh 'sonar-scanner -Dsonar.projectKey=${APP_NAME} -Dsonar.sources=. -Dsonar.host.url=${Sonar_Url} -Dsonar.login=${Sonar_Token}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def qualityGate = sh(script: "curl -s -u ${Sonar_Token}: ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME} | jq -r .projectStatus.status", returnStdout: true).trim()
+                    if (qualityGate != 'OK' && qualityGate != 'NONE') {
+                        error "Quality Gate failed with status: ${qualityGate}"
+                    }
+                }
+            }
+        }
+
         stage('Docker Build and Push') {
             steps {
                 script {
@@ -44,6 +61,33 @@ pipeline {
                     docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA} .
                     docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
                     """
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
+            }
+        }
+
+        stage('Rollback') {
+            when {
+                expression {
+                    currentBuild.result == 'FAILURE'
+                }
+            }
+            steps {
+                script {
+                    echo "Rolling back to previous stable version..."
+                    sh '''
+                    if (fileExists('deployment.yaml')) {
+                        sed -i 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:previous-stable-tag#' deployment.yaml
+                        kubectl apply -f deployment.yaml
+                    } else {
+                        echo "Rollback not supported for Helm deployments."
+                    }
+                    '''
                 }
             }
         }
