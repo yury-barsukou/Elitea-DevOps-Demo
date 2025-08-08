@@ -37,6 +37,23 @@ pipeline {
             }
         }
 
+        stage('Static Code Analysis') {
+            steps {
+                sh 'sonar-scanner -Dsonar.host.url=${Sonar_Url} -Dsonar.login=${Sonar_Token}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def qualityGate = sh(script: 'curl -s ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME}', returnStdout: true)
+                    if (!qualityGate.contains('OK') && !qualityGate.contains('NONE')) {
+                        error 'Quality Gate failed!'
+                    }
+                }
+            }
+        }
+
         stage('Docker Build and Push') {
             steps {
                 script {
@@ -45,6 +62,12 @@ pipeline {
                     docker push ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}
                     """
                 }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                sh 'trivy image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
             }
         }
 
@@ -72,6 +95,17 @@ pipeline {
                      }
                  }
              }
+        }
+
+        stage('Rollback') {
+            steps {
+                script {
+                    sh '''
+                    echo "Rolling back to previous version..."
+                    # Add rollback logic here
+                    '''
+                }
+            }
         }
     }
 }
