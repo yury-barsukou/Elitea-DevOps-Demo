@@ -1,0 +1,88 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  DOCKER_REGISTRY: 'localhost:5000'
+  APP_NAME: 'myapp'
+  Sonar_Url: 'https://localhost'
+  Sonar_Token: 'sonarqube'
+  security_scan_tool: 'trivy'
+  GIT_SHA: $(Build.SourceVersion)
+
+stages:
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: Build
+    steps:
+    - script: |
+        echo "##[section]Checking out source code"
+        git checkout $(Build.SourceBranchName)
+      displayName: 'Checkout SCM'
+
+    - script: |
+        echo "##[section]Installing dependencies"
+        composer install
+      displayName: 'Install Dependencies'
+
+    - script: |
+        echo "##[section]Building application"
+        # Add build commands here if needed
+      displayName: 'Build Application'
+
+    - script: |
+        echo "##[section]Running unit tests"
+        ./vendor/bin/phpunit
+      displayName: 'Run Unit Tests'
+
+    - script: |
+        echo "##[section]Performing static code analysis"
+        sonar-scanner -Dsonar.host.url=$(Sonar_Url) -Dsonar.login=$(Sonar_Token)
+      displayName: 'Static Code Analysis'
+
+    - task: SonarCloudAnalyze@1
+      displayName: 'Quality Gate Check'
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+    - script: |
+        echo "##[section]Building Docker image"
+        docker build -t $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA) .
+        docker push $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)
+      displayName: 'Docker Build and Push'
+
+    - script: |
+        echo "##[section]Running security scan"
+        trivy image $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)
+      displayName: 'Security Scan'
+
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: Deploy
+    steps:
+    - script: |
+        if [ -f "helm/values.yaml" ]; then
+          echo "##[section]Performing Helm deployment"
+          helm upgrade --install $(APP_NAME) ./helm --set image.repository=$(DOCKER_REGISTRY)/$(APP_NAME) --set image.tag=$(GIT_SHA)
+        elif [ -f "deployment.yaml" ]; then
+          echo "##[section]Updating deployment.yaml"
+          case "$(uname -s)" in
+            Darwin*) sed -i '' "s|image:.*|image: $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)|" deployment.yaml ;;
+            *) sed -i "s|image:.*|image: $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)|" deployment.yaml ;;
+          esac
+          kubectl apply -f deployment.yaml
+        else
+          echo "Error: No deployment configuration found!" >&2
+          exit 1
+        fi
+      displayName: 'Deploy Application'
+
+    - script: |
+        echo "##[section]Rollback mechanism"
+        # Add rollback commands here if needed
+      displayName: 'Rollback Mechanism'
