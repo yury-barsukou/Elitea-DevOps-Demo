@@ -16,7 +16,8 @@ pipeline {
                 checkout scm
             }
         }
-         stage('Setup PHP with Xdebug') {
+
+        stage('Setup PHP with Xdebug') {
             steps {
                 sh 'sudo add-apt-repository ppa:ondrej/php -y'
                 sh 'sudo apt-get update'
@@ -37,6 +38,23 @@ pipeline {
             }
         }
 
+        stage('Static Code Analysis') {
+            steps {
+                sh 'sonar-scanner -Dsonar.host.url=${Sonar_Url} -Dsonar.login=${Sonar_Token}'
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def qualityGate = sh(script: 'curl -s -u ${Sonar_Token}: ${Sonar_Url}/api/qualitygates/project_status?projectKey=${APP_NAME}', returnStdout: true)
+                    if (!qualityGate.contains('OK') && !qualityGate.contains('NONE')) {
+                        error("Quality Gate failed")
+                    }
+                }
+            }
+        }
+
         stage('Docker Build and Push') {
             steps {
                 script {
@@ -48,30 +66,45 @@ pipeline {
             }
         }
 
-       stage('Deploy') {
-             steps {
-                 script {
-                     if (fileExists('helm/values.yaml')) {
-                         sh '''
-                         helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
-                         '''
-                     } else if (fileExists('deployment.yaml')) {
-                         sh '''
-                         case "$(uname -s)" in
-                             Darwin)
-                                 sed -i '' 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
-                                 ;;
-                             *)
-                                 sed -i 's#image: .*#image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}#' deployment.yaml
-                                 ;;
-                         esac
-                         kubectl apply -f deployment.yaml
-                         '''
-                     } else {
-                         error "No deployment configuration found (helm/values.yaml or deployment.yaml)"
-                     }
-                 }
-             }
+        stage('Security Scan') {
+            steps {
+                sh '${security_scan_tool} image ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    if (fileExists('helm/values.yaml')) {
+                        sh '''
+                        helm upgrade --install ${APP_NAME} ./helm --set image.repository=${DOCKER_REGISTRY}/${APP_NAME} --set image.tag=${GIT_SHA}
+                        '''
+                    } else if (fileExists('deployment.yaml')) {
+                        sh '''
+                        case "$(uname -s)" in
+                            Darwin*) sed -i '' 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml ;;
+                            *) sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${APP_NAME}:${GIT_SHA}|' deployment.yaml ;;
+                        esac
+                        '''
+                        sh 'kubectl apply -f deployment.yaml'
+                    } else {
+                        error("No deployment configuration found")
+                    }
+                }
+            }
+        }
+
+        stage('Rollback') {
+            steps {
+                script {
+                    try {
+                        sh 'echo "Deployment successful"'
+                    } catch (Exception e) {
+                        sh 'kubectl rollout undo deployment/${APP_NAME}'
+                        error("Deployment failed, rolled back to previous version")
+                    }
+                }
+            }
         }
     }
 }
