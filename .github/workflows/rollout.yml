@@ -1,0 +1,73 @@
+name: Rollout Pipeline
+
+on:
+  push:
+    branches:
+      - roll-out-update-108
+
+env:
+  DOCKER_REGISTRY: localhost:5000
+  APP_NAME: myapp
+  Sonar_Url: https://localhost
+  Sonar_Token: sonarqube
+  security_scan_tool: trivy
+  GIT_SHA: ${{ github.sha }}
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout SCM
+      uses: actions/checkout@v3
+
+    - name: Install Dependencies
+      run: |
+        composer install
+
+    - name: Build
+      run: |
+        echo "Building the application..."
+
+    - name: Run Unit Tests
+      run: |
+        ./vendor/bin/phpunit tests
+
+    - name: Static Code Analysis
+      run: |
+        sonar-scanner -Dsonar.host.url=${{ env.Sonar_Url }} -Dsonar.login=${{ env.Sonar_Token }}
+
+    - name: Quality Gate
+      run: |
+        echo "Checking Quality Gate..."
+        # Simulate quality gate check
+        echo "OK"
+
+    - name: Docker Build and Push
+      run: |
+        docker build -t ${{ env.DOCKER_REGISTRY }}/${{ env.APP_NAME }}:${{ env.GIT_SHA }} .
+        docker push ${{ env.DOCKER_REGISTRY }}/${{ env.APP_NAME }}:${{ env.GIT_SHA }}
+
+    - name: Security Scan
+      run: |
+        trivy image ${{ env.DOCKER_REGISTRY }}/${{ env.APP_NAME }}:${{ env.GIT_SHA }}
+
+    - name: Deploy
+      run: |
+        if [ -f "helm/values.yaml" ]; then
+          helm upgrade --install ${{ env.APP_NAME }} ./helm --set image.repository=${{ env.DOCKER_REGISTRY }}/${{ env.APP_NAME }},image.tag=${{ env.GIT_SHA }}
+        elif [ -f "deployment.yaml" ]; then
+          case "$(uname -s)" in
+            Darwin*) sed -i '' "s|image:.*|image: ${{ env.DOCKER_REGISTRY }}/${{ env.APP_NAME }}:${{ env.GIT_SHA }}|" deployment.yaml ;;
+            *) sed -i "s|image:.*|image: ${{ env.DOCKER_REGISTRY }}/${{ env.APP_NAME }}:${{ env.GIT_SHA }}|" deployment.yaml ;;
+          esac
+          kubectl apply -f deployment.yaml
+        else
+          echo "Error: No deployment configuration found!" && exit 1
+        fi
+
+    - name: Rollback
+      if: failure()
+      run: |
+        echo "Rolling back to previous version..."
+        # Add rollback logic here
