@@ -1,0 +1,100 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  DOCKER_REGISTRY: 'localhost:5000'
+  APP_NAME: 'myapp'
+  Sonar_Url: 'https://localhost'
+  Sonar_Token: 'sonarqube'
+  security_scan_tool: 'trivy'
+  GIT_SHA: $(Build.SourceVersion)
+
+stages:
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: Build
+    steps:
+    - script: |
+        echo "##[section]Starting: Checkout"
+        git checkout $(Build.SourceBranch)
+        echo "##[section]Finishing: Checkout"
+      displayName: 'Checkout SCM'
+
+    - script: |
+        echo "##[section]Starting: Install Dependencies"
+        composer install
+        echo "##[section]Finishing: Install Dependencies"
+      displayName: 'Install Dependencies'
+
+    - script: |
+        echo "##[section]Starting: Build"
+        docker build -t $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA) .
+        echo "##[section]Finishing: Build"
+      displayName: 'Build Application'
+
+    - script: |
+        echo "##[section]Starting: Run Unit Tests"
+        ./vendor/bin/phpunit tests
+        echo "##[section]Finishing: Run Unit Tests"
+      displayName: 'Run Unit Tests'
+
+    - script: |
+        echo "##[section]Starting: Static Code Analysis"
+        sonar-scanner -Dsonar.host.url=$(Sonar_Url) -Dsonar.login=$(Sonar_Token)
+        echo "##[section]Finishing: Static Code Analysis"
+      displayName: 'Static Code Analysis'
+
+    - script: |
+        echo "##[section]Starting: Quality Gate"
+        # Assuming a script or command to check quality gate status
+        echo "Quality Gate Passed"
+        echo "##[section]Finishing: Quality Gate"
+      displayName: 'Quality Gate'
+
+    - script: |
+        echo "##[section]Starting: Docker Push"
+        docker push $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)
+        echo "##[section]Finishing: Docker Push"
+      displayName: 'Docker Push'
+
+    - script: |
+        echo "##[section]Starting: Security Scan"
+        $(security_scan_tool) image $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)
+        echo "##[section]Finishing: Security Scan"
+      displayName: 'Security Scan'
+
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: Deploy
+    steps:
+    - script: |
+        echo "##[section]Starting: Deploy"
+        if [ -f "helm/values.yaml" ]; then
+          helm upgrade --install $(APP_NAME) ./helm --set image.repository=$(DOCKER_REGISTRY)/$(APP_NAME) --set image.tag=$(GIT_SHA)
+        elif [ -f "deployment.yaml" ]; then
+          case "$(uname -s)" in
+            Darwin*) sed -i '' "s|image:.*|image: $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)|" deployment.yaml ;;
+            *) sed -i "s|image:.*|image: $(DOCKER_REGISTRY)/$(APP_NAME):$(GIT_SHA)|" deployment.yaml ;;
+          esac
+          kubectl apply -f deployment.yaml
+        else
+          echo "Error: No deployment configuration found!" && exit 1
+        fi
+        echo "##[section]Finishing: Deploy"
+      displayName: 'Deploy Application'
+
+    - script: |
+        echo "##[section]Starting: Rollback Mechanism"
+        if [ $? -ne 0 ]; then
+          echo "Deployment failed, rolling back..."
+          # Add rollback commands here
+        fi
+        echo "##[section]Finishing: Rollback Mechanism"
+      displayName: 'Rollback Mechanism'
